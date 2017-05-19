@@ -1,3 +1,7 @@
+package practica04_firma;
+
+
+import java.util.Date;
 /*
  * To change this license header, choose License Headers in Project Properties.
  * To change this template file, choose Tools | Templates
@@ -31,6 +35,7 @@ public class User {
         apellidos = data.substring(data.indexOf(CN) + CN.length());
         apellidos = apellidos.substring(0, apellidos.indexOf(","));
     }
+    
 
     public String getName() {
         return name;
@@ -42,6 +47,23 @@ public class User {
 
     public String getDni() {
         return dni;
+    }
+    
+    /**
+     * Método con marca temporal para generar los datos a firmar.
+     * @param url detipo String.
+     * @return 
+     */
+    public String[] firmando(String url){
+        
+        Date date = new Date();
+        String[] datos = new String[2];
+        
+        datos[0] = "&url="+ url + "&fecha="+date.toString() + "name="+name +"&apellidos="+ apellidos+ "&dni="+dni+ "&fecha="+date.toString() ;
+        //Datos a firmar
+        datos[1] = url+date.toString()+name+apellidos+dni;
+        
+        return datos;
     }
 
 }

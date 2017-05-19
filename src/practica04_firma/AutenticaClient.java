@@ -1,15 +1,34 @@
+package practica04_firma;
+
+
+import es.gob.jmulticard.jse.provider.DnieProvider;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
+
+import java.net.MalformedURLException;
+
+import java.security.InvalidKeyException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
 import java.security.Provider;
+import java.security.Security;
+import java.security.Signature;
+import java.security.SignatureException;
+import java.security.UnrecoverableEntryException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
+import java.security.spec.InvalidKeySpecException;
+import java.util.Base64;
 import java.util.Enumeration;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JOptionPane;
+
 
 /*
  * To change this license header, choose License Headers in Project Properties.
@@ -53,7 +72,8 @@ public class AutenticaClient extends javax.swing.JFrame {
         java.util.ResourceBundle bundle = java.util.ResourceBundle.getBundle("Bundle"); // NOI18N
         setTitle(bundle.getString("app_title")); // NOI18N
 
-        jButtonAutentica.setText(bundle.getString("main_button_autenticate")); // NOI18N
+        java.util.ResourceBundle bundle1 = java.util.ResourceBundle.getBundle("practica04_firma/Bundle"); // NOI18N
+        jButtonAutentica.setText(bundle1.getString("main_button_autenticate")); // NOI18N
         jButtonAutentica.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButtonAutenticaActionPerformed(evt);
@@ -137,16 +157,19 @@ public class AutenticaClient extends javax.swing.JFrame {
 
         pack();
     }// </editor-fold>//GEN-END:initComponents
-
+    
     private void jButtonAutenticaActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonAutenticaActionPerformed
         try {
             iniKeyStore();
-            doAuth("hola");
-        } catch (SignatureError ex) {
-            Logger.getLogger(AutenticaClient.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (KeyStoreException ex) {
+            try {
+              doAuth(); //Procedemos a la firma            
+            } catch (    UnrecoverableKeyException | MalformedURLException | SignatureException | InvalidKeySpecException ex) {
+                Logger.getLogger(AutenticaClient.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        } catch (SignatureError | KeyStoreException | IOException | NoSuchAlgorithmException | CertificateException | UnrecoverableEntryException | InvalidKeyException ex) {
             Logger.getLogger(AutenticaClient.class.getName()).log(Level.SEVERE, null, ex);
         }
+       
     }//GEN-LAST:event_jButtonAutenticaActionPerformed
 
     private void jButtonGrabarActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonGrabarActionPerformed
@@ -156,7 +179,7 @@ public class AutenticaClient extends javax.swing.JFrame {
     /**
      * @param args the command line arguments
      */
-    public static void main(String args[]) {
+    public static void main(String args[]) throws IOException, NoSuchAlgorithmException, CertificateException, UnrecoverableEntryException {
         String dn = "";
         /* Set the Nimbus look and feel */
         //<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
@@ -170,29 +193,23 @@ public class AutenticaClient extends javax.swing.JFrame {
                     break;
                 }
             }
-        } catch (ClassNotFoundException ex) {
-            java.util.logging.Logger.getLogger(AutenticaClient.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (InstantiationException ex) {
-            java.util.logging.Logger.getLogger(AutenticaClient.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (IllegalAccessException ex) {
-            java.util.logging.Logger.getLogger(AutenticaClient.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (javax.swing.UnsupportedLookAndFeelException ex) {
+        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
             java.util.logging.Logger.getLogger(AutenticaClient.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
         }
         //</editor-fold>
 
         try {
-            System.setProperty("es.gob.jmulticard.fastmode", "true");
-
+            System.setProperty("es.gob.jmulticard.fastmode", "true"); //Modo rápido de inicialización
+           
             iniKeyStore();
-
+         
             final Enumeration<String> aliases = dniKS.aliases();
             while (aliases.hasMoreElements()) {
                 System.out.println(aliases.nextElement());
             }
-
-           
-            infoBox("Hola " + user.getName(), "Bienvenido");
+            
+            user = new User(authCert.toString());
+            infoBox("Hola " + user.getName()," Bienvenido");
 
         } catch (KeyStoreException ex) {
             Logger.getLogger(AutenticaClient.class.getName()).log(Level.SEVERE, null, ex);
@@ -200,19 +217,24 @@ public class AutenticaClient extends javax.swing.JFrame {
         }
         /* Create and display the form */
         java.awt.EventQueue.invokeLater(new Runnable() {
+            @Override
             public void run() {
                 new AutenticaClient().setVisible(true);
-
+                
+                jName.setText(user.getName());
+                jApellidos.setText(user.getApellidos());
+                jDNI.setText(user.getDni());
             }
         });
 
     }
+    
 
     public static String alias = "CertFirmaDigital";
     private static Provider dniProvider = null;
     private static KeyStore dniKS = null;
     private static X509Certificate authCert = null;
-
+    private static RSAPublicKey CertRSA = null;
     /**
      * @param args the command line arguments
      */
@@ -220,26 +242,41 @@ public class AutenticaClient extends javax.swing.JFrame {
         JOptionPane.showMessageDialog(null, infoMessage, titleBar, JOptionPane.INFORMATION_MESSAGE);
     }
 
-    private static void iniKeyStore() throws KeyStoreException {
+    private static void iniKeyStore() throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, UnrecoverableEntryException {
         if (dniKS == null) {
-           //TODO inicializar el KeyStore 
-        }
-    }
+           //TODO inicializar el KeyStore
+          //Cargamos el almacen de claves con el modo rapido
+          dniProvider = new DnieProvider();
+          System.setProperty("es.gob.jmulticard.fastmode", "true");
+          Security.addProvider(dniProvider);
+          //Obtenemos el DNI del almacen
+          dniKS = KeyStore.getInstance("DNI"); //$NON-NLS-1$ 
+          try {
+                dniKS.load(null, null);
+           } catch (IOException | NoSuchAlgorithmException | CertificateException ex) {
+                Logger.getLogger(AutenticaClient.class.getName()).log(Level.SEVERE, null, ex);
+           }
+          //Obtenemos el certificado 
+          authCert = (X509Certificate) dniKS.getCertificate("CertAutenticacion");
 
+        }
+                
+    }
+    
+    
     public void saveCertificate() {
         try {
+            //Obtenemos el motor de firma y lo inicializamos
+            try (FileOutputStream keyfos = new FileOutputStream("public.key")) {
+                //Codificamos el cert
+                byte encodedKey[] = CertRSA.getEncoded(); 
 
-            // Se obtiene el motor de firma y se inicializa
-            FileOutputStream keyfos = new FileOutputStream("public.key");
-            RSAPublicKey rsa = (RSAPublicKey) authCert.getPublicKey();
-            byte encodedKey[] = rsa.getEncoded();
-
-            String rsakey = rsa.getFormat() + " " + rsa.getAlgorithm() + rsa.toString();
-            System.out.println(rsakey);
-            keyfos.write(encodedKey);
-            keyfos.close();
-            //Certificate authCert = ks.getCertificate("CertFirmaDigital");
-        } catch (IOException ex) {
+                String rsakey = CertRSA.getFormat() + " " + CertRSA.getAlgorithm() + CertRSA.toString();
+                System.out.println(rsakey);
+                keyfos.write(encodedKey);
+            }
+            System.out.println("Certificado guardado correctamente");
+       } catch (IOException ex) {
             Logger.getLogger(AutenticaClient.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
@@ -250,10 +287,40 @@ public class AutenticaClient extends javax.swing.JFrame {
      * @param data Datos a firmar
      * @return
      */
-    private String doAuth(String data) throws SignatureError {
-
-        //TODO realizar aquí la firma y crear el método de conexión aparte
-        return null;
+    private static  String url = "http://localhost:82/server_dni"; 
+    private String doAuth() throws SignatureError, NoSuchAlgorithmException, KeyStoreException, UnrecoverableKeyException, InvalidKeyException, MalformedURLException, SignatureException, IOException, InvalidKeySpecException {
+        //Obtenemos el motor de firma y lo inicializamos
+        final Signature signature = Signature.getInstance("SHA-256withRSA"); 
+        //Se inicia la clave privada de la firma
+        signature.initSign((PrivateKey) dniKS.getKey(alias, null));
+        //Obtenemos la clave pública del certificado 
+        CertRSA = (RSAPublicKey) dniKS.getCertificate(alias).getPublicKey();
+        System.out.println("Certificado: "+CertRSA);
+        //Obtenemos los datos a firmar
+        String [] datos = user.firmando(url);
+        // Firmamos los datos 
+        signature.update(datos[1].getBytes()); //$NON-NLS-1$
+        // Obtenemos la firma
+        final byte[] signatureBytes = signature.sign();
+        //Codificamos la firma y el certificado en Base64.
+        byte[] codif = Base64.getUrlEncoder().encode(signatureBytes);
+        System.out.println("Firma en Base64: "+new String(codif));
+        byte[] codifRSA = Base64.getUrlEncoder().encode(CertRSA.getEncoded());
+        System.out.println("Certificado en Base64:"+new String(codifRSA));
+        //Datos enviados al server
+        PeticionPost post = new PeticionPost (url);
+            post.add("datos", datos[0]);
+            post.add("clavePublic", new String(codifRSA));
+            post.add("firma", new String(codif));
+            
+        String paquete=datos[0] +"&clavePublic="+new String(codifRSA) +"&firma="+ new String(codif);
+        System.out.println("Datos envio: " +paquete);
+        System.out.println(datos[1]);
+        String respuesta = post.getRespueta();
+        System.out.println(respuesta);	
+       
+       
+        return respuesta;
     }
 
     public class SignatureError extends Exception {
@@ -263,7 +330,9 @@ public class AutenticaClient extends javax.swing.JFrame {
         }
 
     }
-
+     
+    
+    
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private static javax.swing.JLabel jApellidos;
     private javax.swing.JButton jButtonAutentica;
